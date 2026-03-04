@@ -3,30 +3,37 @@ import os
 from fastmcp import FastMCP
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.exceptions import ToolError
-from fastmcp.server.dependencies import get_http_headers
+from fastmcp.server.dependencies import get_http_request
 from dotenv import load_dotenv
 from auth_utils import verify_token
 
 load_dotenv()
 
-# Auth middleware using your HMAC verify_token from auth_utils.py
-class HMACAuthMiddleware(Middleware):
-    async def on_call_tool(self, context: MiddlewareContext, call_next):
-        headers = get_http_headers()
 
-        auth_header = headers.get("authorization", "")
+class HMACAuthMiddleware(Middleware):
+
+    async def on_request(self, context: MiddlewareContext, call_next):
+        try:
+            # Use get_http_request() instead of get_http_headers()
+            request = get_http_request()
+            auth_header = request.headers.get("authorization", "")
+        except Exception:
+            # No HTTP request context (e.g. during initialization) — let it through
+            return await call_next(context)
+
+        # Only check requests that carry an Authorization header check
+        if not auth_header:
+            return await call_next(context)
+
         if not auth_header.startswith("Bearer "):
             raise ToolError("Unauthorized: Missing Bearer token")
 
-        # Extract the raw token after "Bearer "
         token = auth_header[len("Bearer "):]
-
-        # Use your HMAC verify_token from auth_utils.py
         client_id = verify_token(token)
+
         if not client_id:
             raise ToolError("Unauthorized: Invalid or expired token")
 
-        # Token is valid — proceed
         return await call_next(context)
 
 
@@ -43,7 +50,6 @@ def add(a: int, b: int) -> int:
 def multiply(a: int, b: int) -> int:
     """Multiply two integer numbers together."""
     return a * b
-
 
 
 
